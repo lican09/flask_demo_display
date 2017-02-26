@@ -1,0 +1,39 @@
+---
+- hosts: testserver
+  remote_user: ice
+  vars:
+      project: "consumer_financial_rc_apply_yidai"
+      venv: "/var/www/consumer_financial_rc_apply_yidai/env/"
+  tasks:
+      - name: clone/pull repo
+        become: true
+        become_user: deploy
+        git: repo=git@git.cdecube.com:wolong/{{ project }}.git dest=/var/www/{{ project }} force=yes version=develop
+      - name: check if venv exists
+        stat: path={{ venv }}{{ project }}
+        register: repo_exists
+      - name: create venv if not exists
+        become: true
+        become_user: deploy
+        command: virtualenv {{ venv }}{{ project }}
+        when: repo_exists.stat.isdir is not defined
+      - name: update pip env
+        become: true
+        become_user: deploy
+        pip: requirements=/var/www/{{ project }}/requirements.txt virtualenv={{ venv }}{{ project }} extra_args='-i http://pypi.doubanio.com/simple --trusted-host=pypi.doubanio.com'
+      - name: copy supervisor conf file
+        sudo: yes
+        copy: src=/var/www/{{ project }}/conf/supervisord.ini dest=/etc/supervisord.d/{{ project }}.ini remote_src=true
+      - name: copy production config file
+        copy: src=/var/www/{{ project }}/product.py dest=/var/www/{{ project }}/app/config.py remote_src=true
+      - name: copy production constant file
+        copy: src=/var/www/{{ project }}/constant.py dest=/var/www/{{ project }}/app/constant.py remote_src=true
+      - name: restart supervisor backend
+        become: true
+        become_user: root
+        supervisorctl: name={{ project }}_backend state=restarted
+      - name: restart supervisor celery
+        become: true
+        become_user: root
+        supervisorctl: name={{ project }}_celery state=restarted
+        ignore_errors: yes
